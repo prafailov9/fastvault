@@ -18,8 +18,9 @@ public class HttpServerWrapper implements Server, Shutdownable {
   private final HttpServer httpServer;
   private final RuntimeContext runtimeContext;
 
-  public HttpServerWrapper(int port, RuntimeContext runtimeContext) {
+  public HttpServerWrapper(RuntimeContext runtimeContext) {
     this.runtimeContext = runtimeContext;
+    int port = runtimeContext.platformState().deviceAddress().port();
     httpServer = createServer(port);
     attachHealthEndpoint();
     attachGetFilesEndpoint();

@@ -47,11 +47,11 @@ public class Main {
     MessageChannel<Path> fileChannel = new MessageChannel<>(128);
 
     PlatformState platformState = determinePlatformState();
-
+    var targetAddress = platformState.platformType() == WINDOWS ? MAC_DEVICE_ADDRESS : WIN_DEVICE_ADDRESS;
     RuntimeContext context =
         new RuntimeContext(
             platformState,
-            platformState.platformType() == WINDOWS ? MAC_DEVICE_ADDRESS : WIN_DEVICE_ADDRESS,
+            targetAddress,
             basedir,
             ingoingDir,
             outgoingDir,
@@ -62,7 +62,7 @@ public class Main {
             messageChannel);
 
     // 2. init and start the server.
-    HttpServerWrapper serverWrapper = new HttpServerWrapper(serverPort, context);
+    HttpServerWrapper serverWrapper = new HttpServerWrapper(context);
 
     // 3. configure client
     HttpClient client = HttpClient.newHttpClient();

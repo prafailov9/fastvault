@@ -66,12 +66,13 @@ public class Downloader implements Runnable {
         continue;
       }
 
+      log.info("Downloader running");
       // Source Machine flow(MAC/PC)
       // 1. connect to source machine
       if (!checkLiveSourceMachine()) {
         continue;
       }
-
+      log.info("Target live. Listing files");
       // 2. Read available files
       var filenames = getFiles();
       if (filenames.isEmpty()) {
@@ -112,12 +113,10 @@ public class Downloader implements Runnable {
     HttpResponse<String> response;
     try {
       response = client.send(request, HttpResponse.BodyHandlers.ofString());
-      if (response.statusCode() != 200) {
-        log.info("Server is {}", response.body());
-        return false;
-      }
-      return true;
+      log.info("Server is {}", response.body());
+      return response.statusCode() != 200;
     } catch (IOException | InterruptedException e) {
+      log.error("Could not send request to {}. Error: {}", baseUri, e.getMessage());
       return false;
     }
   }

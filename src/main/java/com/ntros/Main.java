@@ -47,6 +47,7 @@ public class Main {
     String archive = "sent";
     int downloadDelayMs = 250;
     int uploadDelayMs = 250;
+    // more workers than permitted requestors to give space for other work.
     int serverWorkers = 8;
     int dwPermits = 5;
     CancellationToken token = new CancellationToken();

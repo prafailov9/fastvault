@@ -138,10 +138,7 @@ public class Downloader implements Runnable {
                 URI.create(
                     baseUri + "/ack?filename=" + URLEncoder.encode(name, StandardCharsets.UTF_8)))
             .timeout(Duration.ofSeconds(10))
-            .POST(
-                HttpRequest.BodyPublishers
-                    .noBody()) // state change → POST; your server doesn't check the method, so this
-            // just works
+            .POST(HttpRequest.BodyPublishers.noBody())// POST on state change.
             .build();
     try {
       var res = client.send(req, HttpResponse.BodyHandlers.ofString());
@@ -194,7 +191,11 @@ public class Downloader implements Runnable {
     return Set.of();
   }
 
-  /** Downloads file to a tmp dir first, then moves to destination */
+  /**
+   * Downloads file to a tmp dir first, then moves to destination. Overwrites existing with
+   * downloaded on same-name. For meaningfully different files with the same name, should send more
+   * information.
+   */
   private Optional<Path> download(String filename, Path downloadDirectory) {
     var req =
         HttpRequest.newBuilder()
@@ -215,7 +216,6 @@ public class Downloader implements Runnable {
     Path part = tmp.resolve(filename + "." + UUID.randomUUID() + ".part");
 
     try {
-      // currently only writing the size of the file.
       var res = client.send(req, HttpResponse.BodyHandlers.ofFile(part));
       if (res.statusCode() != 200) {
         log.info("Failed to download {} from source machine. HTTP {}", filename, res.statusCode());
@@ -230,6 +230,7 @@ public class Downloader implements Runnable {
 
       log.info("{} downloaded", filename);
       Path destination = downloadDirectory.resolve(filename);
+      // atomic works only if both files on the same fs.
       Files.move(part, destination, StandardCopyOption.ATOMIC_MOVE);
       return Optional.of(destination);
     } catch (IOException e) {
@@ -241,7 +242,7 @@ public class Downloader implements Runnable {
     } finally {
       try {
         Files.deleteIfExists(part);
-      } catch (IOException ign) {
+      } catch (IOException ignore) {
 
       }
     }

@@ -1,7 +1,6 @@
 package com.ntros.server;
 
 import com.ntros.LifeCycle;
-import com.ntros.Shutdownable;
 import com.ntros.data.RuntimeContext;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
@@ -47,7 +46,6 @@ public class HttpServerWrapper implements Server, LifeCycle {
   public HttpServer getServer() {
     return httpServer;
   }
-
 
   private HttpServer createServer(int port) {
     try {
@@ -193,6 +191,7 @@ public class HttpServerWrapper implements Server, LifeCycle {
               Paths.get(runtimeContext.platformState().homeDir(), runtimeContext.basedir(), "sent");
           boolean created = createDirIfNotExist(sentDir);
           if (!created) {
+            log.info("could not create sent dir");
             return;
           }
 

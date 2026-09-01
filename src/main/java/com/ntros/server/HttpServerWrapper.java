@@ -1,5 +1,6 @@
 package com.ntros.server;
 
+import com.ntros.LifeCycle;
 import com.ntros.Shutdownable;
 import com.ntros.data.RuntimeContext;
 import com.sun.net.httpserver.HttpExchange;
@@ -19,7 +20,7 @@ import java.util.concurrent.Executors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-public class HttpServerWrapper implements Server, Shutdownable {
+public class HttpServerWrapper implements Server, LifeCycle {
   private static final int WORKERS_POOL_LEN = 5;
   private static final Logger log = LoggerFactory.getLogger(HttpServerWrapper.class);
   private final HttpServer httpServer;
@@ -38,7 +39,6 @@ public class HttpServerWrapper implements Server, Shutdownable {
     attachCleanupEndpoint();
     attachElectEndpoint();
     attachDemoteEndpoint();
-    httpServer.start();
     log.info("Server live on port: {}", port);
   }
 
@@ -48,11 +48,6 @@ public class HttpServerWrapper implements Server, Shutdownable {
     return httpServer;
   }
 
-  @Override
-  public void shutdown() {
-    httpServer.stop(10);
-    log.info("Server shutdown");
-  }
 
   private HttpServer createServer(int port) {
     try {
@@ -209,7 +204,7 @@ public class HttpServerWrapper implements Server, Shutdownable {
           }
           Files.move(src, dest, StandardCopyOption.ATOMIC_MOVE);
           byte[] res = "file cleared".getBytes(StandardCharsets.UTF_8);
-          exchange.sendResponseHeaders(200, res.length); // the promise
+          exchange.sendResponseHeaders(200, res.length);
           try (var out = exchange.getResponseBody()) {
             out.write(res);
           }
@@ -223,6 +218,7 @@ public class HttpServerWrapper implements Server, Shutdownable {
       out.write(body);
     }
   }
+
   private boolean createDirIfNotExist(Path f) {
     try {
       Files.createDirectories(f);
@@ -232,6 +228,7 @@ public class HttpServerWrapper implements Server, Shutdownable {
       return false;
     }
   }
+
   private void attachElectEndpoint() {
     httpServer.createContext(
         "/elect",
@@ -315,6 +312,17 @@ public class HttpServerWrapper implements Server, Shutdownable {
             URLDecoder.decode(pair.substring(i + 1), StandardCharsets.UTF_8));
     }
     return m;
+  }
+
+  @Override
+  public void start() {
+    httpServer.start();
+  }
+
+  @Override
+  public void stop() throws InterruptedException {
+    httpServer.stop(10);
+    log.info("Server shutdown");
   }
 
   private record Response(int code, byte[] responseBytes) {}

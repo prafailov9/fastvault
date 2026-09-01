@@ -140,7 +140,7 @@ public class Downloader implements Runnable {
             .GET()
             .build();
     try {
-      var res = client.send(req, HttpResponse.BodyHandlers.ofString());
+      client.send(req, HttpResponse.BodyHandlers.ofString());
     } catch (IOException | InterruptedException ignored) {
     }
   }

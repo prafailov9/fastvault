@@ -72,7 +72,7 @@ public class Main {
 
     // 2. init and start the server.
     HttpServerWrapper serverWrapper = new HttpServerWrapper(context);
-
+    serverWrapper.start();
     // 3. configure client
     HttpClient client =
         HttpClient.newBuilder().connectTimeout(Duration.of(10, ChronoUnit.SECONDS)).build();
@@ -110,7 +110,7 @@ public class Main {
             new Thread(
                 () -> {
                   try {
-                    serverWrapper.shutdown();
+                    serverWrapper.stop();
                     controller.stop();
                   } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();

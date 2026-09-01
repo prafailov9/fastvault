@@ -45,6 +45,7 @@ public class Main {
     String basedir = "vault/shared";
     String ingoingDir = "in";
     String outgoingDir = "out";
+    String archive = "sent";
     int downloadDelayMs = 250;
     int uploadDelayMs = 250;
     CancellationToken token = new CancellationToken();
@@ -60,6 +61,7 @@ public class Main {
             basedir,
             ingoingDir,
             outgoingDir,
+            archive,
             downloadDelayMs,
             uploadDelayMs,
             token,
@@ -98,9 +100,17 @@ public class Main {
     try {
       Files.createDirectories(uploadDirectory);
     } catch (IOException e) {
-      log.error("Could not create download directory {}", downloadDirectory, e);
+      log.error("Could not create upload directory {}", uploadDirectory, e);
       return false;
     }
+    Path sentDirectory = Paths.get(platformState.homeDir(), context.basedir(), context.archive());
+    try {
+      Files.createDirectories(sentDirectory);
+    } catch (IOException e) {
+      log.error("Could not create sent directory {}", sentDirectory, e);
+      return false;
+    }
+
     return true;
   }
 

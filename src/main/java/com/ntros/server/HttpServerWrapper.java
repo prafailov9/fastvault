@@ -188,12 +188,10 @@ public class HttpServerWrapper implements Server, LifeCycle {
                   runtimeContext.outgoing());
 
           Path sentDir =
-              Paths.get(runtimeContext.platformState().homeDir(), runtimeContext.basedir(), "sent");
-          boolean created = createDirIfNotExist(sentDir);
-          if (!created) {
-            log.info("could not create sent dir");
-            return;
-          }
+              Paths.get(
+                  runtimeContext.platformState().homeDir(),
+                  runtimeContext.basedir(),
+                  runtimeContext.archive());
 
           Path src = outDir.resolve(name);
           Path dest = sentDir.resolve(name);

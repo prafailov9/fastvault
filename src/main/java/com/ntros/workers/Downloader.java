@@ -61,7 +61,7 @@ public class Downloader implements Runnable {
    * PC/MAC Leader:
    *  a) phone: pc checks its own mailbox(later version), downloads from there
    *  b) mac: checks if mac is live first, then asks mac for any files in its out folder.
-   *      If yes -> download and store in local in dir.
+   *      If yes -> download and store in local dir.
    *
    *
    * HttpRequest.BodyPublishers.ofFile( Path.of("data.bin") )
@@ -96,17 +96,6 @@ public class Downloader implements Runnable {
         log.info("No files found");
         continue;
       }
-
-      // filter out already existing files
-      try (var files = Files.list(downloadDirectory)) {
-        files.forEach(f -> filenames.remove(f.getFileName().toString()));
-      } catch (IOException e) {
-        log.info("Failed to open download dir", e);
-      }
-      if (filenames.isEmpty()) {
-        log.info("No new files found");
-        continue;
-      }
       log.info("Downloading files");
       // 3. delegate download + write to VTs
       for (var f : filenames) {
@@ -128,20 +117,27 @@ public class Downloader implements Runnable {
 
   // tells the server dwonloading for this file is finished. Move it from its out/ to sent/  dir
   private void ack(Path p) {
-    log.info("Downloaded: {}", p.getFileName().toString());
+    String name = p.getFileName().toString();
     var req =
         HttpRequest.newBuilder()
             .uri(
                 URI.create(
-                    baseUri
-                        + "/download?filename="
-                        + URLEncoder.encode(p.getFileName().toString(), StandardCharsets.UTF_8)))
+                    baseUri + "/ack?filename=" + URLEncoder.encode(name, StandardCharsets.UTF_8)))
             .timeout(Duration.ofSeconds(10))
-            .GET()
+            .POST(
+                HttpRequest.BodyPublishers
+                    .noBody()) // state change → POST; your server doesn't check the method, so this
+            // just works
             .build();
     try {
-      client.send(req, HttpResponse.BodyHandlers.ofString());
-    } catch (IOException | InterruptedException ignored) {
+      var res = client.send(req, HttpResponse.BodyHandlers.ofString());
+      if (res.statusCode() != 200) {
+        log.warn("ack {} failed: HTTP {} {}", name, res.statusCode(), res.body());
+      }
+    } catch (IOException e) {
+      log.warn("ack {} failed: {}", name, e.getMessage());
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
     }
   }
 

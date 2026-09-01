@@ -9,6 +9,7 @@ public record RuntimeContext(
     String basedir,
     String ingoing,
     String outgoing,
+    String archive,
     int dwDelayMs,
     int upDelayMs,
     CancellationToken workersToken,

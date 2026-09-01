@@ -40,6 +40,7 @@ public class RuntimeController implements Runtime {
 
     cli = new Thread(new CliRunner(context, inputCommands), "cli-1");
     commandExecutor = new Thread(new CommandExecutor(context, client), "cmd-executor-1");
+    // background thread so the shutdown process isnt blocked on scanning System.in.
     Thread input = new Thread(new ConsoleInputReader(inputCommands), "input-scanner-1");
     input.setDaemon(true);
     input.start();
@@ -51,6 +52,7 @@ public class RuntimeController implements Runtime {
     downloader.start();
     cli.start();
     commandExecutor.start();
+    //    uploader.start();
   }
 
   @Override

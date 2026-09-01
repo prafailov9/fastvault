@@ -70,9 +70,8 @@ public class Main {
       return;
     }
 
-    // 2. init and start the server.
+    // 2. init the server.
     HttpServerWrapper serverWrapper = new HttpServerWrapper(context);
-    serverWrapper.start();
     // 3. configure client
     HttpClient client =
         HttpClient.newBuilder().connectTimeout(Duration.of(10, ChronoUnit.SECONDS)).build();
@@ -81,6 +80,7 @@ public class Main {
 
     shutdown(serverWrapper, controller);
     controller.start();
+    serverWrapper.start();
   }
 
   private static boolean createLocalDirs(PlatformState platformState, RuntimeContext context) {

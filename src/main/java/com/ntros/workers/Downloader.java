@@ -85,20 +85,17 @@ public class Downloader implements Runnable {
         continue;
       }
 
-      log.info("Downloader running");
       // Source Machine flow(MAC/PC)
       // 1. connect to source machine
       if (!checkLiveSourceMachine()) {
         continue;
       }
-      log.info("Target live. Listing files");
       // 2. Read undelivered files. Can contain inFlight files too, until they are acked.
       var filenames = getFiles();
       if (filenames.isEmpty()) {
         log.info("No files found");
         continue;
       }
-      log.info("Downloading files");
       // 3. delegate download + write to VTs
       for (var f : filenames) {
         // if a listed file is in the set, skip it since its already being processed

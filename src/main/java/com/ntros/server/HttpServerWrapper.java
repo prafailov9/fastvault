@@ -69,7 +69,7 @@ public class HttpServerWrapper implements Server, Shutdownable {
     httpServer.createContext(
         "/files",
         exchange -> {
-          Path outDir = Paths.get(runtimeContext.basedir() + runtimeContext.outgoing());
+          Path outDir = Paths.get(runtimeContext.basedir(), runtimeContext.outgoing());
           log.info("received get-files request. Reading files from {}", outDir);
           StringBuilder stringBuilder = new StringBuilder();
           var filenames = Files.list(outDir).toList();

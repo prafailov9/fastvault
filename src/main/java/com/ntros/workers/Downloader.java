@@ -43,6 +43,7 @@ public class Downloader implements Runnable {
   // files are removed once the files is fully acked on the targer machine
   private final Set<String> inFlight = ConcurrentHashMap.newKeySet();
   // allow at most 5 VTs to download simultaneously.
+  // Server-side workers are limited, so 1K concurrent downloaders will create a bottleneck.
   private final Semaphore semaphore;
 
   public Downloader(RuntimeContext runtimeContext, HttpClient client) {
@@ -107,7 +108,8 @@ public class Downloader implements Runnable {
         // acquire inside VT so the downloader is not blocked.
         // on large number of files to download(n = 1000), 1K VTs will be
         // created, only 5 of them allowed to download.
-        // The rest wait. VTs waiting is nearly free because they dont pin OS threads.
+        // The rest wait.
+        // VTs waiting is nearly free because they dont pin OS threads.
         Thread.ofVirtual()
             .start(
                 () -> {
@@ -158,6 +160,7 @@ public class Downloader implements Runnable {
     HttpRequest request =
         HttpRequest.newBuilder()
             .uri(URI.create(String.format("%s/healthcheck", baseUri)))
+            .timeout(Duration.ofSeconds(10))
             .GET()
             .build();
     HttpResponse<String> response;
@@ -173,7 +176,11 @@ public class Downloader implements Runnable {
 
   private Set<String> getFiles() {
     var req =
-        HttpRequest.newBuilder().uri(URI.create(String.format("%s/files", baseUri))).GET().build();
+        HttpRequest.newBuilder()
+            .uri(URI.create(String.format("%s/files", baseUri)))
+            .timeout(Duration.ofSeconds(10))
+            .GET()
+            .build();
 
     try {
       var res = client.send(req, HttpResponse.BodyHandlers.ofLines());

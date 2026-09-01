@@ -196,6 +196,10 @@ public class HttpServerWrapper implements Server, Shutdownable {
 
           Path sentDir =
               Paths.get(runtimeContext.platformState().homeDir(), runtimeContext.basedir(), "sent");
+          boolean created = createDirIfNotExist(sentDir);
+          if (!created) {
+            return;
+          }
 
           Path src = outDir.resolve(name);
           Path dest = sentDir.resolve(name);
@@ -219,7 +223,15 @@ public class HttpServerWrapper implements Server, Shutdownable {
       out.write(body);
     }
   }
-
+  private boolean createDirIfNotExist(Path f) {
+    try {
+      Files.createDirectories(f);
+      return true;
+    } catch (IOException e) {
+      log.error("Could not create download directory {}", f, e);
+      return false;
+    }
+  }
   private void attachElectEndpoint() {
     httpServer.createContext(
         "/elect",

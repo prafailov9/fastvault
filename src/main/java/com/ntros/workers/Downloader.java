@@ -7,19 +7,24 @@ import com.ntros.data.RuntimeContext;
 import com.ntros.data.platform.PlatformState;
 import java.io.IOException;
 import java.net.URI;
+import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.CopyOption;
 import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
+import java.time.Duration;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -38,6 +43,7 @@ public class Downloader implements Runnable {
   private final HttpClient client;
   private final DeviceAddress targetDeviceAddress;
   private final String baseUri;
+  private final Set<String> inFlight = ConcurrentHashMap.newKeySet();
 
   public Downloader(RuntimeContext runtimeContext, HttpClient client) {
     this.runtimeContext = runtimeContext;
@@ -104,13 +110,38 @@ public class Downloader implements Runnable {
       log.info("Downloading files");
       // 3. delegate download + write to VTs
       for (var f : filenames) {
+        if (!inFlight.add(f)) {
+          continue;
+        }
         Thread.ofVirtual()
             .start(
                 () -> {
-                  var downloaded = download(f, downloadDirectory);
-                  downloaded.ifPresent(path -> log.info("Downloaded {}", path));
+                  try {
+                    download(f, downloadDirectory).ifPresent(this::ack);
+                  } finally {
+                    inFlight.remove(f);
+                  }
                 });
       }
+    }
+  }
+
+  // tells the server dwonloading for this file is finished. Move it from its out/ to sent/  dir
+  private void ack(Path p) {
+    log.info("Downloaded: {}", p.getFileName().toString());
+    var req =
+        HttpRequest.newBuilder()
+            .uri(
+                URI.create(
+                    baseUri
+                        + "/download?filename="
+                        + URLEncoder.encode(p.getFileName().toString(), StandardCharsets.UTF_8)))
+            .timeout(Duration.ofSeconds(10))
+            .GET()
+            .build();
+    try {
+      var res = client.send(req, HttpResponse.BodyHandlers.ofString());
+    } catch (IOException | InterruptedException ignored) {
     }
   }
 
@@ -152,8 +183,12 @@ public class Downloader implements Runnable {
   private Optional<Path> download(String filename, Path downloadDirectory) {
     var req =
         HttpRequest.newBuilder()
-            .uri(URI.create(String.format("%s/download", baseUri)))
-            .header("filename", filename)
+            .uri(
+                URI.create(
+                    baseUri
+                        + "/download?filename="
+                        + URLEncoder.encode(filename, StandardCharsets.UTF_8)))
+            .timeout(Duration.ofSeconds(10))
             .GET()
             .build();
     Path tmp = Paths.get(platformState.homeDir(), runtimeContext.basedir(), ".tmp");
@@ -162,24 +197,39 @@ public class Downloader implements Runnable {
     if (!created) {
       return Optional.empty();
     }
-    Path tmpDest = tmp.resolve(filename);
+    Path part = tmp.resolve(filename + "." + UUID.randomUUID() + ".part");
+
     try {
-      var res = client.send(req, HttpResponse.BodyHandlers.ofFile(tmpDest));
+      // currently only writing the size of the file.
+      var res = client.send(req, HttpResponse.BodyHandlers.ofFile(part));
       if (res.statusCode() != 200) {
         log.info("Failed to download {} from source machine. HTTP {}", filename, res.statusCode());
 
-        Files.deleteIfExists(tmpDest);
+        return Optional.empty();
+      }
+      long expected = res.headers().firstValueAsLong("Content-Length").orElse(-1);
+      if (expected >= 0 && Files.size(part) != expected) {
+        log.warn("{}: got {} bytes, expected {}", filename, Files.size(part), expected);
         return Optional.empty();
       }
 
       log.info("{} downloaded", filename);
       Path destination = downloadDirectory.resolve(filename);
-      Files.move(tmpDest, destination, StandardCopyOption.ATOMIC_MOVE);
-      return Optional.of(res.body());
-    } catch (IOException | InterruptedException e) {
+      Files.move(part, destination, StandardCopyOption.ATOMIC_MOVE);
+      return Optional.of(destination);
+    } catch (IOException e) {
       log.error("failed during download request", e);
+      return Optional.empty();
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      return Optional.empty();
+    } finally {
+      try {
+        Files.deleteIfExists(part);
+      } catch (IOException ign) {
+
+      }
     }
-    return Optional.empty();
   }
 
   private boolean createDirIfNotExist(Path f) {

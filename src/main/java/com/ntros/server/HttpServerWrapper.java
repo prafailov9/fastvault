@@ -2,14 +2,19 @@ package com.ntros.server;
 
 import com.ntros.Shutdownable;
 import com.ntros.data.RuntimeContext;
+import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
 import java.net.InetSocketAddress;
+import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.Executors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -30,9 +35,9 @@ public class HttpServerWrapper implements Server, Shutdownable {
     attachLeadershipEndpoint();
     attachGetFilesEndpoint();
     attachDownloadEndpoint();
+    attachCleanupEndpoint();
     attachElectEndpoint();
     attachDemoteEndpoint();
-
     httpServer.start();
     log.info("Server live on port: {}", port);
   }
@@ -144,43 +149,75 @@ public class HttpServerWrapper implements Server, Shutdownable {
     httpServer.createContext(
         "/download",
         exchange -> {
-          var filename = Path.of(exchange.getRequestHeaders().get("filename").getFirst());
-          // check if f exist
+          String name = queryParams(exchange).get("filename");
+          if (name == null
+              || name.isBlank()
+              || name.contains("/")
+              || name.contains("\\")
+              || name.contains("..")) {
+            respond(exchange, 400, "bad filename");
+            return;
+          }
           Path outDir =
               Paths.get(
                   runtimeContext.platformState().homeDir(),
                   runtimeContext.basedir(),
                   runtimeContext.outgoing());
-          Path file = outDir.resolve(filename);
-          log.info("Download requested: {}", filename);
-          log.info("Resolved path: {}", file.toAbsolutePath());
-
-          byte[] responseBytes;
-          if (Files.notExists(file)) {
-            responseBytes =
-                String.format("File %s not found", filename).getBytes(StandardCharsets.UTF_8);
-            exchange.sendResponseHeaders(404, responseBytes.length);
-            try (var out = exchange.getResponseBody()) {
-              out.write(responseBytes);
-            }
-
-          } else {
-            // loads whole file into memory -> could throw OOM Error.
-            // TODO: send file size and stream the file to the response
-            //            responseBytes = Files.readAllBytes(file);
-            long fileSize = Files.size(file);
-            byte[] sizeBytes = ("" + fileSize).getBytes(StandardCharsets.UTF_8);
-            exchange.sendResponseHeaders(200, sizeBytes.length);
-            try (var out = exchange.getResponseBody()) {
-              out.write(sizeBytes);
-              out.flush();
-              //              long chunk = fileSize / 5;
-              //              for (long i = 0; i < fileSize; i+=chunk) {
-              //              }
-              Files.copy(file, out);
-            }
+          Path file = outDir.resolve(name);
+          if (!Files.isRegularFile(file)) {
+            respond(exchange, 404, "not found: " + name);
+            return;
+          }
+          exchange.sendResponseHeaders(200, Files.size(file)); // the promise
+          try (var out = exchange.getResponseBody()) {
+            Files.copy(file, out); // keeping it
           }
         });
+  }
+
+  private void attachCleanupEndpoint() {
+    httpServer.createContext(
+        "/ack",
+        exchange -> {
+          String name = queryParams(exchange).get("filename");
+          if (name == null
+              || name.isBlank()
+              || name.contains("/")
+              || name.contains("\\")
+              || name.contains("..")) {
+            respond(exchange, 400, "bad filename");
+            return;
+          }
+          Path outDir =
+              Paths.get(
+                  runtimeContext.platformState().homeDir(),
+                  runtimeContext.basedir(),
+                  runtimeContext.outgoing());
+
+          Path sentDir =
+              Paths.get(runtimeContext.platformState().homeDir(), runtimeContext.basedir(), "sent");
+
+          Path src = outDir.resolve(name);
+          Path dest = sentDir.resolve(name);
+          if (!Files.isRegularFile(src)) {
+            respond(exchange, 404, "not found: " + name);
+            return;
+          }
+          Files.move(src, dest, StandardCopyOption.ATOMIC_MOVE);
+          byte[] res = "file cleared".getBytes(StandardCharsets.UTF_8);
+          exchange.sendResponseHeaders(200, res.length); // the promise
+          try (var out = exchange.getResponseBody()) {
+            out.write(res);
+          }
+        });
+  }
+
+  private static void respond(HttpExchange ex, int code, String text) throws IOException {
+    byte[] body = text.getBytes(StandardCharsets.UTF_8);
+    ex.sendResponseHeaders(code, body.length);
+    try (var out = ex.getResponseBody()) {
+      out.write(body);
+    }
   }
 
   private void attachElectEndpoint() {
@@ -252,6 +289,20 @@ public class HttpServerWrapper implements Server, Shutdownable {
       return new Response(500, "down".getBytes(StandardCharsets.UTF_8));
     }
     return new Response(200, "healthy".getBytes(StandardCharsets.UTF_8));
+  }
+
+  private static Map<String, String> queryParams(HttpExchange ex) {
+    Map<String, String> m = new HashMap<>();
+    String raw = ex.getRequestURI().getRawQuery(); // raw, not getQuery()
+    if (raw == null) return m;
+    for (String pair : raw.split("&")) {
+      int i = pair.indexOf('=');
+      if (i > 0)
+        m.put(
+            URLDecoder.decode(pair.substring(0, i), StandardCharsets.UTF_8),
+            URLDecoder.decode(pair.substring(i + 1), StandardCharsets.UTF_8));
+    }
+    return m;
   }
 
   private record Response(int code, byte[] responseBytes) {}

@@ -36,11 +36,12 @@ public class CommandExecutor implements Runnable {
   @Override
   public void run() {
     while (!token.isCancelled()) {
-      Message msg = null;
+      Message msg;
       try {
         msg = messageChannel.take();
       } catch (InterruptedException e) {
         Thread.currentThread().interrupt();
+        return;
       }
       if (msg == null) {
         continue;

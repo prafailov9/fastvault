@@ -71,35 +71,58 @@ public class HttpServerWrapper implements Server, Shutdownable {
     httpServer.createContext(
         "/files",
         exchange -> {
-          Path outDir = Paths.get(runtimeContext.basedir(), runtimeContext.outgoing());
-          log.info("received get-files request. Reading files from {}", outDir);
+          Path outDir =
+              Paths.get(
+                  runtimeContext.platformState().homeDir(),
+                  runtimeContext.basedir(),
+                  runtimeContext.outgoing());
+          log.info("received get-files request. Reading files from {}", outDir.toAbsolutePath());
 
-          List<Path> filenames;
+          log.info("outDir = {}", outDir.toAbsolutePath());
+          log.info("exists = {}", Files.exists(outDir));
+          log.info("isDirectory = {}", Files.isDirectory(outDir));
 
-          try (var files = Files.list(outDir)) {
-            filenames = files.toList();
-          }
+          try {
+            List<String> filenames;
 
-          byte[] responseBytes;
+            try (var files = Files.list(outDir)) {
+              filenames =
+                  files
+                      .filter(Files::isRegularFile)
+                      .map(path -> path.getFileName().toString())
+                      .toList();
+            }
 
-          if (filenames.isEmpty()) {
-            String payload = "No files available for download";
-            responseBytes = payload.getBytes(StandardCharsets.UTF_8);
+            byte[] responseBytes;
 
-            exchange.sendResponseHeaders(404, responseBytes.length);
-            log.info(payload);
-          } else {
-            String payload =
-                filenames.stream()
-                    .map(path -> path.getFileName().toString())
-                    .collect(Collectors.joining(","));
+            if (filenames.isEmpty()) {
+              String payload = "No files available for download";
+              responseBytes = payload.getBytes(StandardCharsets.UTF_8);
 
-            responseBytes = payload.getBytes(StandardCharsets.UTF_8);
-            exchange.sendResponseHeaders(200, responseBytes.length);
-          }
+              exchange.sendResponseHeaders(404, responseBytes.length);
+              log.info(payload);
+            } else {
+              String payload = String.join("\n", filenames);
+              responseBytes = payload.getBytes(StandardCharsets.UTF_8);
 
-          try (var out = exchange.getResponseBody()) {
-            out.write(responseBytes);
+              exchange.sendResponseHeaders(200, responseBytes.length);
+            }
+
+            try (var out = exchange.getResponseBody()) {
+              out.write(responseBytes);
+            }
+
+          } catch (Exception e) {
+            log.error("Failed to list files in {}", outDir.toAbsolutePath(), e);
+
+            String payload = "Internal server error";
+            byte[] responseBytes = payload.getBytes(StandardCharsets.UTF_8);
+
+            exchange.sendResponseHeaders(500, responseBytes.length);
+
+            try (var out = exchange.getResponseBody()) {
+              out.write(responseBytes);
+            }
           }
         });
   }

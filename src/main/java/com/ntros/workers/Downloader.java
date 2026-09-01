@@ -88,6 +88,8 @@ public class Downloader implements Runnable {
         continue;
       }
 
+      // TODO: filter same-name files
+
       log.info("Downloading files");
       // 3. delegate download to VTs. VTs write to a file channel, saver pool reads.
       for (var f : filenames) {

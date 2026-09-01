@@ -7,7 +7,6 @@ import com.ntros.workers.CliRunner;
 import com.ntros.workers.CommandExecutor;
 import com.ntros.workers.ConsoleInputReader;
 import com.ntros.workers.Downloader;
-import com.ntros.workers.FileSaver;
 import com.ntros.workers.Uploader;
 import java.net.http.HttpClient;
 import java.util.concurrent.BlockingQueue;
@@ -26,7 +25,6 @@ public class RuntimeController implements Runtime {
   private final Thread downloader;
   // pulls from local source, writes to external target
   private final Thread uploader;
-  private final Thread saver;
   private final Thread cli;
   private final Thread commandExecutor;
   private final CancellationToken token;
@@ -37,7 +35,6 @@ public class RuntimeController implements Runtime {
     platformState = context.platformState();
     downloader = new Thread(new Downloader(context, client), "ingress-1");
     uploader = new Thread(new Uploader(context, client), "egress-1");
-    saver = new Thread(new FileSaver(context), "saver-1");
 
     BlockingQueue<String> inputCommands = new LinkedBlockingQueue<>();
 
@@ -52,7 +49,6 @@ public class RuntimeController implements Runtime {
   @Override
   public void start() {
     downloader.start();
-    //    saver.start();
     cli.start();
     commandExecutor.start();
   }
@@ -62,9 +58,6 @@ public class RuntimeController implements Runtime {
     token.cancel();
     downloader.interrupt();
     downloader.join();
-
-    //    saver.interrupt();
-    //    saver.join();
 
     cli.interrupt();
     cli.join();

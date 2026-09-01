@@ -2,7 +2,6 @@ package com.ntros.data;
 
 import com.ntros.channel.MessageChannel;
 import com.ntros.data.platform.PlatformState;
-import java.nio.file.Path;
 
 public record RuntimeContext(
     PlatformState platformState,
@@ -13,5 +12,4 @@ public record RuntimeContext(
     int dwDelayMs,
     int upDelayMs,
     CancellationToken workersToken,
-    MessageChannel<Path> fileChannel,
     MessageChannel<Message> messageChannel) {}

@@ -46,7 +46,6 @@ public class Main {
     int uploadDelayMs = 250;
     CancellationToken token = new CancellationToken();
     MessageChannel<Message> messageChannel = new MessageChannel<>(1024);
-    MessageChannel<Path> fileChannel = new MessageChannel<>(128);
 
     PlatformState platformState = determinePlatformState();
     var targetAddress =
@@ -61,7 +60,6 @@ public class Main {
             downloadDelayMs,
             uploadDelayMs,
             token,
-            fileChannel,
             messageChannel);
 
     // create local directories

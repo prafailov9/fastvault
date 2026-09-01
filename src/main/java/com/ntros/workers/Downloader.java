@@ -90,6 +90,8 @@ public class Downloader implements Runnable {
       if (!checkLiveSourceMachine()) {
         continue;
       }
+
+      // TODO: add retry + backoff on list and remove healthcheck since list does the same thing
       // 2. Read undelivered files. Can contain inFlight files too, until they are acked.
       var filenames = getFiles();
       if (filenames.isEmpty()) {
@@ -181,8 +183,8 @@ public class Downloader implements Runnable {
 
     try {
       var res = client.send(req, HttpResponse.BodyHandlers.ofLines());
-      if (res.statusCode() != 200) {
-        log.info("Could not read files at source machine.");
+      if (res.statusCode() == 204) {
+        log.info("No files for transfer at source");
         return Set.of();
       }
       return res.body().collect(Collectors.toSet());

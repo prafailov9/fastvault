@@ -106,15 +106,16 @@ public class HttpServerWrapper implements Server, LifeCycle {
             byte[] responseBytes;
 
             if (filenames.isEmpty()) {
-              String payload = "No files available for download";
+              String payload = "No Content";
               responseBytes = payload.getBytes(StandardCharsets.UTF_8);
 
-              exchange.sendResponseHeaders(404, responseBytes.length);
+              // 204 - successful op, no files exist
+              exchange.sendResponseHeaders(204, responseBytes.length);
               log.info(payload);
             } else {
               String payload = String.join("\n", filenames);
               responseBytes = payload.getBytes(StandardCharsets.UTF_8);
-
+              // 200 - success, files exist
               exchange.sendResponseHeaders(200, responseBytes.length);
             }
             log.info("Listing files");

@@ -70,8 +70,10 @@ public class HttpServerWrapper implements Server, Shutdownable {
         "/files",
         exchange -> {
           Path outDir = Paths.get(runtimeContext.basedir() + runtimeContext.outgoing());
+          log.info("received get-files request");
           StringBuilder stringBuilder = new StringBuilder();
           var filenames = Files.list(outDir).toList();
+          log.info("Available files: {}", filenames);
           for (int i = 0; i < filenames.size(); i++) {
             var f = filenames.get(i).getFileName().toString();
             stringBuilder.append(f);
@@ -81,8 +83,10 @@ public class HttpServerWrapper implements Server, Shutdownable {
           }
           byte[] responseBytes;
           if (filenames.isEmpty()) {
-            responseBytes = "No files available for download".getBytes(StandardCharsets.UTF_8);
+            String payload = "No files available for download";
+            responseBytes = payload.getBytes(StandardCharsets.UTF_8);
             exchange.sendResponseHeaders(404, responseBytes.length);
+            log.info(payload);
           } else {
             responseBytes = stringBuilder.toString().getBytes(StandardCharsets.UTF_8);
             exchange.sendResponseHeaders(200, responseBytes.length);

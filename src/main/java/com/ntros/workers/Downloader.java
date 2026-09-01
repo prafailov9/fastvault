@@ -10,12 +10,17 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.file.CopyOption;
 import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
+import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -60,10 +65,8 @@ public class Downloader implements Runnable {
   public void run() {
     Path downloadDirectory =
         Paths.get(platformState.homeDir(), runtimeContext.basedir(), runtimeContext.ingoing());
-    try {
-      Files.createDirectories(downloadDirectory);
-    } catch (IOException e) {
-      log.error("Could not create download directory {}", downloadDirectory, e);
+    boolean created = createDirIfNotExist(downloadDirectory);
+    if (!created) {
       return;
     }
     while (!token.isCancelled()) {
@@ -88,10 +91,18 @@ public class Downloader implements Runnable {
         continue;
       }
 
-      // TODO: filter same-name files
-
+      // filter out already existing files
+      try (var files = Files.list(downloadDirectory)) {
+        files.forEach(f -> filenames.remove(f.getFileName().toString()));
+      } catch (IOException e) {
+        log.info("Failed to open download dir", e);
+      }
+      if (filenames.isEmpty()) {
+        log.info("No new files found");
+        continue;
+      }
       log.info("Downloading files");
-      // 3. delegate download to VTs. VTs write to a file channel, saver pool reads.
+      // 3. delegate download + write to VTs
       for (var f : filenames) {
         Thread.ofVirtual()
             .start(
@@ -120,7 +131,7 @@ public class Downloader implements Runnable {
     }
   }
 
-  private List<String> getFiles() {
+  private Set<String> getFiles() {
     var req =
         HttpRequest.newBuilder().uri(URI.create(String.format("%s/files", baseUri))).GET().build();
 
@@ -128,15 +139,16 @@ public class Downloader implements Runnable {
       var res = client.send(req, HttpResponse.BodyHandlers.ofLines());
       if (res.statusCode() != 200) {
         log.info("Could not read files at source machine.");
-        return List.of();
+        return Set.of();
       }
-      return res.body().toList();
+      return res.body().collect(Collectors.toSet());
     } catch (IOException | InterruptedException e) {
       log.error("failed during get-files request", e);
     }
-    return List.of();
+    return Set.of();
   }
 
+  /** Downloads file to a tmp dir first, then moves to destination */
   private Optional<Path> download(String filename, Path downloadDirectory) {
     var req =
         HttpRequest.newBuilder()
@@ -144,22 +156,40 @@ public class Downloader implements Runnable {
             .header("filename", filename)
             .GET()
             .build();
+    Path tmp = Paths.get(platformState.homeDir(), runtimeContext.basedir(), ".tmp");
 
-    Path destination = downloadDirectory.resolve(filename);
-
+    boolean created = createDirIfNotExist(tmp);
+    if (!created) {
+      return Optional.empty();
+    }
+    Path tmpDest = tmp.resolve(filename);
     try {
-      var res = client.send(req, HttpResponse.BodyHandlers.ofFile(destination));
+      var res = client.send(req, HttpResponse.BodyHandlers.ofFile(tmpDest));
       if (res.statusCode() != 200) {
         log.info("Failed to download {} from source machine. HTTP {}", filename, res.statusCode());
 
-        Files.deleteIfExists(destination);
+        Files.deleteIfExists(tmpDest);
         return Optional.empty();
       }
+
+      log.info("{} downloaded", filename);
+      Path destination = downloadDirectory.resolve(filename);
+      Files.move(tmpDest, destination, StandardCopyOption.ATOMIC_MOVE);
       return Optional.of(res.body());
     } catch (IOException | InterruptedException e) {
       log.error("failed during download request", e);
     }
     return Optional.empty();
+  }
+
+  private boolean createDirIfNotExist(Path f) {
+    try {
+      Files.createDirectories(f);
+      return true;
+    } catch (IOException e) {
+      log.error("Could not create download directory {}", f, e);
+      return false;
+    }
   }
 
   private boolean waitForDelay() {

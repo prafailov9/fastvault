@@ -10,12 +10,12 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.List;
-import java.util.stream.Collectors;
+import java.util.concurrent.Executors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 public class HttpServerWrapper implements Server, Shutdownable {
-
+  private static final int WORKERS_POOL_LEN = 5;
   private static final Logger log = LoggerFactory.getLogger(HttpServerWrapper.class);
   private final HttpServer httpServer;
   private final RuntimeContext runtimeContext;
@@ -24,15 +24,14 @@ public class HttpServerWrapper implements Server, Shutdownable {
     this.runtimeContext = runtimeContext;
     int port = runtimeContext.platformState().deviceAddress().port();
     httpServer = createServer(port);
+    // server delegates requests to workers. Unblocks VTs downloading on the Leader side.
+    httpServer.setExecutor(Executors.newFixedThreadPool(WORKERS_POOL_LEN));
     attachHealthEndpoint();
+    attachLeadershipEndpoint();
     attachGetFilesEndpoint();
     attachDownloadEndpoint();
     attachElectEndpoint();
     attachDemoteEndpoint();
-
-
-    // TODO: add GET /leadership, returning "LEADER"/"FOLLOWER" based on ps.isLeader
-
 
     httpServer.start();
     log.info("Server live on port: {}", port);
@@ -65,6 +64,20 @@ public class HttpServerWrapper implements Server, Shutdownable {
           Response healthResponse = buildHealthResponse();
           var bytes = healthResponse.responseBytes;
           exchange.sendResponseHeaders(healthResponse.code, bytes.length);
+
+          try (var out = exchange.getResponseBody()) {
+            out.write(bytes);
+          }
+        });
+  }
+
+  private void attachLeadershipEndpoint() {
+    httpServer.createContext(
+        "/leadership",
+        exchange -> {
+          Response res = buildLeadershipResponse();
+          var bytes = res.responseBytes;
+          exchange.sendResponseHeaders(res.code, bytes.length);
 
           try (var out = exchange.getResponseBody()) {
             out.write(bytes);
@@ -152,14 +165,25 @@ public class HttpServerWrapper implements Server, Shutdownable {
             responseBytes =
                 String.format("File %s not found", filename).getBytes(StandardCharsets.UTF_8);
             exchange.sendResponseHeaders(404, responseBytes.length);
+            try (var out = exchange.getResponseBody()) {
+              out.write(responseBytes);
+            }
 
           } else {
-            responseBytes = Files.readAllBytes(file);
-            exchange.sendResponseHeaders(200, responseBytes.length);
-          }
-
-          try (var out = exchange.getResponseBody()) {
-            out.write(responseBytes);
+            // loads whole file into memory -> could throw OOM Error.
+            // TODO: send file size and stream the file to the response
+            //            responseBytes = Files.readAllBytes(file);
+            long fileSize = Files.size(file);
+            byte[] sizeBytes = ("" + fileSize).getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(200, sizeBytes.length);
+            try (var out = exchange.getResponseBody()) {
+              out.write(sizeBytes);
+              out.flush();
+              //              long chunk = fileSize / 5;
+              //              for (long i = 0; i < fileSize; i+=chunk) {
+              //              }
+              Files.copy(file, out);
+            }
           }
         });
   }
@@ -214,6 +238,18 @@ public class HttpServerWrapper implements Server, Shutdownable {
             out.write(responseBytes);
           }
         });
+  }
+
+  private Response buildLeadershipResponse() {
+    var state = runtimeContext.platformState();
+    if (state == null || state.isLeader() == null) {
+      return new Response(500, "UNKNOWN".getBytes(StandardCharsets.UTF_8));
+    }
+    int status = 200;
+    if (state.isLeader().get()) {
+      return new Response(status, "LEADER".getBytes(StandardCharsets.UTF_8));
+    }
+    return new Response(status, "FOLLOWER".getBytes(StandardCharsets.UTF_8));
   }
 
   private Response buildHealthResponse() {

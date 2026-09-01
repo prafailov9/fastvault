@@ -39,10 +39,10 @@ public class CliRunner implements Runnable {
         if (in.equals("r") && platformState.isLeader().get()) {
           platformState.relinquishLeadership();
 
-          messageChannel.offer(new Message(ELECT_NEW_LEADER, targetMachine));
+          messageChannel.put(new Message(ELECT_NEW_LEADER, targetMachine));
         } else if (in.equals("i") && !platformState.isLeader().get()) {
           // request leadership
-          messageChannel.offer(new Message(STRIP_LEADERSHIP, targetMachine));
+          messageChannel.put(new Message(STRIP_LEADERSHIP, targetMachine));
           //          platformState.acquireLeadership();
         }
       }

@@ -2,7 +2,7 @@ package com.ntros.channel;
 
 public interface Channel<E> {
 
-  boolean offer(E value);
+  boolean put(E value);
 
   E take() throws InterruptedException;
 

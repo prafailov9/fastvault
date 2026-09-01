@@ -17,7 +17,7 @@ public class MessageChannel<E> implements Channel<E> {
   }
 
   @Override
-  public boolean offer(E value) {
+  public boolean put(E value) {
     synchronized (lock) {
       while (queue.size() >= capacity) {
         try {

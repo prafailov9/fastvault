@@ -9,6 +9,8 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.List;
+import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -71,24 +73,28 @@ public class HttpServerWrapper implements Server, Shutdownable {
         exchange -> {
           Path outDir = Paths.get(runtimeContext.basedir(), runtimeContext.outgoing());
           log.info("received get-files request. Reading files from {}", outDir);
-          StringBuilder stringBuilder = new StringBuilder();
-          var filenames = Files.list(outDir).toList();
-          log.info("Available files: {}", filenames);
-          for (int i = 0; i < filenames.size(); i++) {
-            var f = filenames.get(i).getFileName().toString();
-            stringBuilder.append(f);
-            if (filenames.size() - i != 1) {
-              stringBuilder.append(",");
-            }
+
+          List<Path> filenames;
+
+          try (var files = Files.list(outDir)) {
+            filenames = files.toList();
           }
+
           byte[] responseBytes;
+
           if (filenames.isEmpty()) {
             String payload = "No files available for download";
             responseBytes = payload.getBytes(StandardCharsets.UTF_8);
+
             exchange.sendResponseHeaders(404, responseBytes.length);
             log.info(payload);
           } else {
-            responseBytes = stringBuilder.toString().getBytes(StandardCharsets.UTF_8);
+            String payload =
+                filenames.stream()
+                    .map(path -> path.getFileName().toString())
+                    .collect(Collectors.joining(","));
+
+            responseBytes = payload.getBytes(StandardCharsets.UTF_8);
             exchange.sendResponseHeaders(200, responseBytes.length);
           }
 

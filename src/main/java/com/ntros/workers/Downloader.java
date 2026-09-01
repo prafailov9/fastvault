@@ -58,11 +58,7 @@ public class Downloader implements Runnable {
   @Override
   public void run() {
     Path downloadDirectory =
-        Paths.get(
-            platformState.homeDir(),
-            runtimeContext.basedir(),
-            runtimeContext.ingoing()
-        );
+        Paths.get(platformState.homeDir(), runtimeContext.basedir(), runtimeContext.ingoing());
     try {
       Files.createDirectories(downloadDirectory);
     } catch (IOException e) {
@@ -98,7 +94,7 @@ public class Downloader implements Runnable {
             .start(
                 () -> {
                   Path downloaded = download(f, downloadDirectory);
-                  log.info("");
+                  log.info("Downloaded {}", downloaded);
                 });
       }
     }
@@ -133,7 +129,7 @@ public class Downloader implements Runnable {
       }
       return res.body().toList();
     } catch (IOException | InterruptedException e) {
-      log.error("failed during request", e);
+      log.error("failed during get-files request", e);
     }
     return List.of();
   }

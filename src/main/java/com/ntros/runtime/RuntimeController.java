@@ -17,8 +17,7 @@ import org.slf4j.LoggerFactory;
 
 /**
  * handles the lifecycle when this app is the Leader. By default, PC is the Leader, so it will
- * immediately run the Controller. On MAC, The controller needs to wait until the PC has explicitly
- * relinquished Leadership.
+ * immediately run the Controller.
  */
 public class RuntimeController implements Runtime {
 

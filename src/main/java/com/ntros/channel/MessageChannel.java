@@ -4,6 +4,7 @@ import java.util.ArrayDeque;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+// TODO: probably shuld replace with javas ArrayBlockingQueue<E>
 public class MessageChannel<E> implements Channel<E> {
 
   private static final Logger log = LoggerFactory.getLogger(MessageChannel.class);
@@ -47,11 +48,15 @@ public class MessageChannel<E> implements Channel<E> {
 
   @Override
   public boolean isEmpty() {
-    return queue.isEmpty();
+    synchronized (lock) {
+      return queue.isEmpty();
+    }
   }
 
   @Override
   public int size() {
-    return queue.size();
+    synchronized (lock) {
+      return queue.size();
+    }
   }
 }

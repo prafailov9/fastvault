@@ -29,6 +29,11 @@ public class HttpServerWrapper implements Server, Shutdownable {
     attachDownloadEndpoint();
     attachElectEndpoint();
     attachDemoteEndpoint();
+
+
+    // TODO: add GET /leadership, returning "LEADER"/"FOLLOWER" based on ps.isLeader
+
+
     httpServer.start();
     log.info("Server live on port: {}", port);
   }

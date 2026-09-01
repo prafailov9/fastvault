@@ -47,6 +47,19 @@ public class CommandExecutor implements Runnable {
       }
       log.info("Received msg: {}", msg);
       var cmd = msg.getCommand();
+      /**
+       *
+       *
+       * <pre>
+       * Test flows:
+       *  1. Start both → Windows leader, Mac follower.
+       *  2. Windows presses r → Windows follower, Mac leader.
+       *  3. Mac presses r → Mac follower, Windows leader.
+       *  4. Mac presses i while Windows leads → Windows follower, Mac leader.
+       *  5. Windows presses i while Mac leads → Mac follower, Windows leader.
+       * Kill the target machine during a handoff and observe what happens.
+       * </pre>
+       */
       switch (cmd) {
         case ELECT_NEW_LEADER -> {
           // this machine already relinquished leadership
@@ -60,6 +73,7 @@ public class CommandExecutor implements Runnable {
           // this machine wants leadership
           // tell target he is no longer the leader
           if (!send("demote")) {
+            platformState.acquireLeadership();
             log.info("failed to demote target");
           }
         }
@@ -86,4 +100,42 @@ public class CommandExecutor implements Runnable {
       return false;
     }
   }
+
+  // private SendResult send(String resource) {
+  //  HttpRequest request =
+  //      HttpRequest.newBuilder()
+  //          .uri(URI.create("%s/%s".formatted(baseUri, resource)))
+  //          .POST(HttpRequest.BodyPublishers.noBody())
+  //          .build();
+  //
+  //  try {
+  //    var response =
+  //        client.send(
+  //            request,
+  //            HttpResponse.BodyHandlers.ofString());
+  //
+  //    if (response.statusCode() == 200) {
+  //      return SendResult.SUCCESS;
+  //    }
+  //
+  //    log.info("Response: {}", response.body());
+  //    return SendResult.REJECTED;
+  //
+  //  } catch (IOException e) {
+  //    log.warn("Could not reach target", e);
+  //    return SendResult.UNREACHABLE;
+  //
+  //  } catch (InterruptedException e) {
+  //    Thread.currentThread().interrupt();
+  //    return SendResult.INTERRUPTED;
+  //  }
+  // }
+  //
+  // private enum SendResult {
+  //  SUCCESS,
+  //  REJECTED,
+  //  UNREACHABLE,
+  //  INTERRUPTED
+  // }
+
 }

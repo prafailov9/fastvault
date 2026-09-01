@@ -6,21 +6,30 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 public record PlatformState(
-    PlatformType platformType, DeviceAddress deviceAddress, AtomicBoolean isLeader, String homeDir) {
+    PlatformType platformType,
+    DeviceAddress deviceAddress,
+    AtomicBoolean isLeader,
+    String homeDir) {
 
   private static final Logger log = LoggerFactory.getLogger(PlatformState.class);
 
-  public void relinquishLeadership() {
+  public boolean relinquishLeadership() {
     if (isLeader.compareAndSet(true, false)) {
-      log.info("Platform {} no longer leader. Notifying systems...", platformType.name());
+      log.info("Platform {} relinquished leadership.", platformType.name());
+      return true;
     }
-    log.info("Current platform {} was not the leader.", platformType.name());
+
+    log.info("Platform {} is already a follower.", platformType.name());
+    return false;
   }
 
-  public void acquireLeadership() {
+  public boolean acquireLeadership() {
     if (isLeader.compareAndSet(false, true)) {
-      log.info("Platform {} is now leader. Notifying systems...", platformType.name());
+      log.info("Platform {} acquired leadership.", platformType.name());
+      return true;
     }
-    log.info("Current platform {} already the leader.", platformType.name());
+
+    log.info("Platform {} is already leader.", platformType.name());
+    return false;
   }
 }

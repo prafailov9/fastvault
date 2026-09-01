@@ -11,8 +11,11 @@ import com.ntros.data.RuntimeContext;
 import com.ntros.data.platform.PlatformState;
 import com.ntros.runtime.RuntimeController;
 import com.ntros.server.HttpServerWrapper;
+import java.io.IOException;
 import java.net.http.HttpClient;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -41,13 +44,13 @@ public class Main {
     String outgoingDir = "out";
     int downloadDelayMs = 250;
     int uploadDelayMs = 250;
-    int serverPort = 8081;
     CancellationToken token = new CancellationToken();
     MessageChannel<Message> messageChannel = new MessageChannel<>(1024);
     MessageChannel<Path> fileChannel = new MessageChannel<>(128);
 
     PlatformState platformState = determinePlatformState();
-    var targetAddress = platformState.platformType() == WINDOWS ? MAC_DEVICE_ADDRESS : WIN_DEVICE_ADDRESS;
+    var targetAddress =
+        platformState.platformType() == WINDOWS ? MAC_DEVICE_ADDRESS : WIN_DEVICE_ADDRESS;
     RuntimeContext context =
         new RuntimeContext(
             platformState,
@@ -61,6 +64,11 @@ public class Main {
             fileChannel,
             messageChannel);
 
+    // create local directories
+    if (!createLocalDirs(platformState, context)) {
+      return;
+    }
+
     // 2. init and start the server.
     HttpServerWrapper serverWrapper = new HttpServerWrapper(context);
 
@@ -70,6 +78,27 @@ public class Main {
 
     shutdown(serverWrapper, controller);
     controller.start();
+  }
+
+  private static boolean createLocalDirs(PlatformState platformState, RuntimeContext context) {
+    Path downloadDirectory =
+        Paths.get(platformState.homeDir(), context.basedir(), context.ingoing());
+    try {
+      Files.createDirectories(downloadDirectory);
+    } catch (IOException e) {
+      log.error("Could not create download directory {}", downloadDirectory, e);
+      return false;
+    }
+
+    Path uploadDirectory =
+        Paths.get(platformState.homeDir(), context.basedir(), context.outgoing());
+    try {
+      Files.createDirectories(uploadDirectory);
+    } catch (IOException e) {
+      log.error("Could not create download directory {}", downloadDirectory, e);
+      return false;
+    }
+    return true;
   }
 
   private static void shutdown(HttpServerWrapper serverWrapper, RuntimeController controller) {
@@ -92,8 +121,9 @@ public class Main {
   private static PlatformState determinePlatformState() {
     String os = System.getProperty("os.name").toLowerCase();
     if (os.contains("win")) {
-      return new PlatformState(WINDOWS, WIN_DEVICE_ADDRESS, new AtomicBoolean(true), "C:");
+      return new PlatformState(WINDOWS, WIN_DEVICE_ADDRESS, new AtomicBoolean(true), "C:\\");
     }
-    return new PlatformState(MAC, MAC_DEVICE_ADDRESS, new AtomicBoolean(false), "user.home");
+    return new PlatformState(
+        MAC, MAC_DEVICE_ADDRESS, new AtomicBoolean(false), System.getProperty("user.home"));
   }
 }

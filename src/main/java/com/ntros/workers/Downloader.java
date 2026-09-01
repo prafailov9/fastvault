@@ -10,6 +10,7 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -56,8 +57,18 @@ public class Downloader implements Runnable {
    */
   @Override
   public void run() {
-    Path source =
-        Paths.get(platformState.homeDir(), runtimeContext.basedir(), runtimeContext.outgoing());
+    Path downloadDirectory =
+        Paths.get(
+            platformState.homeDir(),
+            runtimeContext.basedir(),
+            runtimeContext.ingoing()
+        );
+    try {
+      Files.createDirectories(downloadDirectory);
+    } catch (IOException e) {
+      log.error("Could not create download directory {}", downloadDirectory, e);
+      return;
+    }
     while (!token.isCancelled()) {
       if (waitForDelay()) {
         return;
@@ -76,31 +87,20 @@ public class Downloader implements Runnable {
       // 2. Read available files
       var filenames = getFiles();
       if (filenames.isEmpty()) {
+        log.info("No files found");
         continue;
       }
 
+      log.info("Downloading files");
       // 3. delegate download to VTs. VTs write to a file channel, saver pool reads.
       for (var f : filenames) {
         Thread.ofVirtual()
             .start(
                 () -> {
-                  Path downloaded = download(f, source);
-                  write(downloaded);
-                  // TODO: probably should remove FileSaver
+                  Path downloaded = download(f, downloadDirectory);
+                  log.info("");
                 });
       }
-    }
-  }
-
-  private void write(Path f) {
-    if (f == null) {
-      return;
-    }
-    try {
-      // TODO: figure out how to create a file at target dir
-      Files.createFile(f);
-    } catch (IOException e) {
-      log.error("Could not create file {}", f.getFileName(), e);
     }
   }
 
@@ -113,8 +113,8 @@ public class Downloader implements Runnable {
     HttpResponse<String> response;
     try {
       response = client.send(request, HttpResponse.BodyHandlers.ofString());
-      log.info("Server is {}", response.body());
-      return response.statusCode() != 200;
+      log.info("Target Machine is {}", response.body());
+      return response.statusCode() == 200;
     } catch (IOException | InterruptedException e) {
       log.error("Could not send request to {}. Error: {}", baseUri, e.getMessage());
       return false;

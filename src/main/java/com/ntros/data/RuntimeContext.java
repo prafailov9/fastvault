@@ -12,5 +12,7 @@ public record RuntimeContext(
     String archive,
     int dwDelayMs,
     int upDelayMs,
+    int serverWorkers,
+    int dwPermits,
     CancellationToken workersToken,
     MessageChannel<Message> messageChannel) {}

@@ -20,7 +20,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 public class HttpServerWrapper implements Server, LifeCycle {
-  private static final int WORKERS_POOL_LEN = 5;
   private static final Logger log = LoggerFactory.getLogger(HttpServerWrapper.class);
   private final HttpServer httpServer;
   private final RuntimeContext runtimeContext;
@@ -30,7 +29,7 @@ public class HttpServerWrapper implements Server, LifeCycle {
     int port = runtimeContext.platformState().deviceAddress().port();
     httpServer = createServer(port);
     // server delegates requests to workers. Unblocks VTs downloading on the Leader side.
-    httpServer.setExecutor(Executors.newFixedThreadPool(WORKERS_POOL_LEN));
+    httpServer.setExecutor(Executors.newFixedThreadPool(runtimeContext.serverWorkers()));
     attachHealthEndpoint();
     attachLeadershipEndpoint();
     attachGetFilesEndpoint();
@@ -216,16 +215,6 @@ public class HttpServerWrapper implements Server, LifeCycle {
     }
   }
 
-  private boolean createDirIfNotExist(Path f) {
-    try {
-      Files.createDirectories(f);
-      return true;
-    } catch (IOException e) {
-      log.error("Could not create download directory {}", f, e);
-      return false;
-    }
-  }
-
   private void attachElectEndpoint() {
     httpServer.createContext(
         "/elect",
@@ -299,14 +288,17 @@ public class HttpServerWrapper implements Server, LifeCycle {
 
   private static Map<String, String> queryParams(HttpExchange ex) {
     Map<String, String> m = new HashMap<>();
-    String raw = ex.getRequestURI().getRawQuery(); // raw, not getQuery()
-    if (raw == null) return m;
+    String raw = ex.getRequestURI().getRawQuery();
+    if (raw == null) {
+      return m;
+    }
     for (String pair : raw.split("&")) {
       int i = pair.indexOf('=');
-      if (i > 0)
+      if (i > 0) {
         m.put(
             URLDecoder.decode(pair.substring(0, i), StandardCharsets.UTF_8),
             URLDecoder.decode(pair.substring(i + 1), StandardCharsets.UTF_8));
+      }
     }
     return m;
   }

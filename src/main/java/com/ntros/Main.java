@@ -48,6 +48,8 @@ public class Main {
     String archive = "sent";
     int downloadDelayMs = 250;
     int uploadDelayMs = 250;
+    int serverWorkers = 8;
+    int dwPermits = 5;
     CancellationToken token = new CancellationToken();
     MessageChannel<Message> messageChannel = new MessageChannel<>(1024);
 
@@ -64,6 +66,8 @@ public class Main {
             archive,
             downloadDelayMs,
             uploadDelayMs,
+            serverWorkers,
+            dwPermits,
             token,
             messageChannel);
 

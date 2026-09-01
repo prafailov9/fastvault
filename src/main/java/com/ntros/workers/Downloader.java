@@ -1,6 +1,5 @@
 package com.ntros.workers;
 
-import com.ntros.channel.MessageChannel;
 import com.ntros.data.CancellationToken;
 import com.ntros.data.DeviceAddress;
 import com.ntros.data.RuntimeContext;
@@ -12,19 +11,16 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.CopyOption;
-import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.time.Duration;
-import java.util.HashSet;
-import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Semaphore;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -41,17 +37,22 @@ public class Downloader implements Runnable {
   private final CancellationToken token;
   private final PlatformState platformState;
   private final HttpClient client;
-  private final DeviceAddress targetDeviceAddress;
   private final String baseUri;
+  // stops threads from pointlessly downloading the same file
+  // contains filesnames that are currently being downloaded
+  // files are removed once the files is fully acked on the targer machine
   private final Set<String> inFlight = ConcurrentHashMap.newKeySet();
+  // allow at most 5 VTs to download simultaneously.
+  private final Semaphore semaphore;
 
   public Downloader(RuntimeContext runtimeContext, HttpClient client) {
     this.runtimeContext = runtimeContext;
     this.client = client;
     token = runtimeContext.workersToken();
     platformState = runtimeContext.platformState();
-    targetDeviceAddress = runtimeContext.targetDeviceAddress();
+    DeviceAddress targetDeviceAddress = runtimeContext.targetDeviceAddress();
     baseUri = String.format("http://%s:%s", targetDeviceAddress.host(), targetDeviceAddress.port());
+    semaphore = new Semaphore(runtimeContext.dwPermits());
   }
 
   /**
@@ -90,7 +91,7 @@ public class Downloader implements Runnable {
         continue;
       }
       log.info("Target live. Listing files");
-      // 2. Read available files
+      // 2. Read undelivered files. Can contain inFlight files too, until they are acked.
       var filenames = getFiles();
       if (filenames.isEmpty()) {
         log.info("No files found");
@@ -99,16 +100,28 @@ public class Downloader implements Runnable {
       log.info("Downloading files");
       // 3. delegate download + write to VTs
       for (var f : filenames) {
+        // if a listed file is in the set, skip it since its already being processed
         if (!inFlight.add(f)) {
           continue;
         }
+        // acquire inside VT so the downloader is not blocked.
+        // on large number of files to download(n = 1000), 1K VTs will be
+        // created, only 5 of them allowed to download.
+        // The rest wait. VTs waiting is nearly free because they dont pin OS threads.
         Thread.ofVirtual()
             .start(
                 () -> {
                   try {
-                    download(f, downloadDirectory).ifPresent(this::ack);
+                    semaphore.acquire();
+                    try {
+                      download(f, downloadDirectory).ifPresent(this::ack);
+                    } finally {
+                      semaphore.release(); // can only run if the acquire above returned
+                    }
+                  } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
                   } finally {
-                    inFlight.remove(f);
+                    inFlight.remove(f); // pairs with the add() in the loop, runs no matter what
                   }
                 });
       }

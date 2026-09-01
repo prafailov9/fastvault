@@ -95,11 +95,6 @@ public class HttpServerWrapper implements Server, Shutdownable {
                   runtimeContext.basedir(),
                   runtimeContext.outgoing());
           log.info("received get-files request. Reading files from {}", outDir.toAbsolutePath());
-
-          log.info("outDir = {}", outDir.toAbsolutePath());
-          log.info("exists = {}", Files.exists(outDir));
-          log.info("isDirectory = {}", Files.isDirectory(outDir));
-
           try {
             List<String> filenames;
 
@@ -125,7 +120,7 @@ public class HttpServerWrapper implements Server, Shutdownable {
 
               exchange.sendResponseHeaders(200, responseBytes.length);
             }
-            log.info("Sending files batch");
+            log.info("Listing files");
             try (var out = exchange.getResponseBody()) {
               out.write(responseBytes);
             }

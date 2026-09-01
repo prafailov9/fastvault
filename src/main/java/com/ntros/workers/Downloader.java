@@ -15,6 +15,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.List;
+import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -93,8 +94,8 @@ public class Downloader implements Runnable {
         Thread.ofVirtual()
             .start(
                 () -> {
-                  Path downloaded = download(f, downloadDirectory);
-                  log.info("Downloaded {}", downloaded);
+                  var downloaded = download(f, downloadDirectory);
+                  downloaded.ifPresent(path -> log.info("Downloaded {}", path));
                 });
       }
     }
@@ -134,7 +135,7 @@ public class Downloader implements Runnable {
     return List.of();
   }
 
-  private Path download(String filename, Path downloadDirectory) {
+  private Optional<Path> download(String filename, Path downloadDirectory) {
     var req =
         HttpRequest.newBuilder()
             .uri(URI.create(String.format("%s/download", baseUri)))
@@ -142,17 +143,21 @@ public class Downloader implements Runnable {
             .GET()
             .build();
 
+    Path destination = downloadDirectory.resolve(filename);
+
     try {
-      var res = client.send(req, HttpResponse.BodyHandlers.ofFileDownload(downloadDirectory));
+      var res = client.send(req, HttpResponse.BodyHandlers.ofFile(destination));
       if (res.statusCode() != 200) {
-        log.info("Failed to download {} file from source machine.", filename);
-        return null;
+        log.info("Failed to download {} from source machine. HTTP {}", filename, res.statusCode());
+
+        Files.deleteIfExists(destination);
+        return Optional.empty();
       }
-      return res.body();
+      return Optional.of(res.body());
     } catch (IOException | InterruptedException e) {
-      log.error("failed during request", e);
+      log.error("failed during download request", e);
     }
-    return null;
+    return Optional.empty();
   }
 
   private boolean waitForDelay() {

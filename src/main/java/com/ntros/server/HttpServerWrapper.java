@@ -107,7 +107,7 @@ public class HttpServerWrapper implements Server, Shutdownable {
 
               exchange.sendResponseHeaders(200, responseBytes.length);
             }
-
+            log.info("Sending files batch");
             try (var out = exchange.getResponseBody()) {
               out.write(responseBytes);
             }
@@ -133,14 +133,23 @@ public class HttpServerWrapper implements Server, Shutdownable {
         exchange -> {
           var filename = Path.of(exchange.getRequestHeaders().get("filename").getFirst());
           // check if f exist
+          Path outDir =
+              Paths.get(
+                  runtimeContext.platformState().homeDir(),
+                  runtimeContext.basedir(),
+                  runtimeContext.outgoing());
+          Path file = outDir.resolve(filename);
+          log.info("Download requested: {}", filename);
+          log.info("Resolved path: {}", file.toAbsolutePath());
+
           byte[] responseBytes;
-          if (Files.notExists(filename)) {
+          if (Files.notExists(file)) {
             responseBytes =
                 String.format("File %s not found", filename).getBytes(StandardCharsets.UTF_8);
             exchange.sendResponseHeaders(404, responseBytes.length);
 
           } else {
-            responseBytes = Files.readAllBytes(filename);
+            responseBytes = Files.readAllBytes(file);
             exchange.sendResponseHeaders(200, responseBytes.length);
           }
 

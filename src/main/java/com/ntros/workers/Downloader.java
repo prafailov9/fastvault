@@ -98,6 +98,7 @@ public class Downloader implements Runnable {
         log.info("No files found");
         continue;
       }
+      log.info("Read {}", filenames);
       // 3. delegate download + write to VTs
       for (var f : filenames) {
         // if a listed file is in the set, skip it since its already being processed

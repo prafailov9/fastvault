@@ -98,7 +98,7 @@ public class HttpServerWrapper implements Server, LifeCycle {
             try (var files = Files.list(outDir)) {
               filenames =
                   files
-                      .filter(Files::isRegularFile)
+//                      .filter(Files::isRegularFile)
                       .map(path -> path.getFileName().toString())
                       .toList();
             }

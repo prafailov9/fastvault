@@ -138,7 +138,7 @@ public class Downloader implements Runnable {
                 URI.create(
                     baseUri + "/ack?filename=" + URLEncoder.encode(name, StandardCharsets.UTF_8)))
             .timeout(Duration.ofSeconds(10))
-            .POST(HttpRequest.BodyPublishers.noBody())// POST on state change.
+            .POST(HttpRequest.BodyPublishers.noBody()) // POST on state change.
             .build();
     try {
       var res = client.send(req, HttpResponse.BodyHandlers.ofString());
@@ -230,7 +230,7 @@ public class Downloader implements Runnable {
 
       log.info("{} downloaded", filename);
       Path destination = downloadDirectory.resolve(filename);
-      // atomic works only if both files on the same fs.
+      // atomic works only if both files are on the same fs.
       Files.move(part, destination, StandardCopyOption.ATOMIC_MOVE);
       return Optional.of(destination);
     } catch (IOException e) {

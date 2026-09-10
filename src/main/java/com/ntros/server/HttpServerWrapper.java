@@ -1,7 +1,6 @@
 package com.ntros.server;
 
 import com.ntros.LifeCycle;
-import com.ntros.data.PathType;
 import com.ntros.data.RuntimeContext;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
@@ -14,10 +13,9 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Executors;
-import java.util.function.Predicate;
+import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -34,8 +32,7 @@ public class HttpServerWrapper implements Server, LifeCycle {
     httpServer.setExecutor(Executors.newFixedThreadPool(runtimeContext.serverWorkers()));
     attachHealthEndpoint();
     attachLeadershipEndpoint();
-    attachGetPathsEndpoint(PathType.FILES, Files::isRegularFile);
-    attachGetPathsEndpoint(PathType.DIRECTORIES, Files::isDirectory);
+    attachGetFilesEndpoint();
     attachDownloadEndpoint();
     attachCleanupEndpoint();
     attachElectEndpoint();
@@ -55,6 +52,17 @@ public class HttpServerWrapper implements Server, LifeCycle {
     } catch (IOException e) {
       throw new RuntimeException(e);
     }
+  }
+
+  @Override
+  public void start() {
+    httpServer.start();
+  }
+
+  @Override
+  public void stop() throws InterruptedException {
+    httpServer.stop(10);
+    log.info("Server shutdown");
   }
 
   private void attachHealthEndpoint() {
@@ -85,56 +93,45 @@ public class HttpServerWrapper implements Server, LifeCycle {
         });
   }
 
-  private void attachGetPathsEndpoint(PathType pathType, Predicate<Path> fileType) {
-    String pathName = pathType.name().toLowerCase();
+  /**
+   * Lists every regular file under out/, recursively, as ONE flat list of relative paths, one per
+   * line: "decompiled copy/sub/Foo.class". Directory structure travels inside the names, so the
+   * client never has to ask about directories -- the server does the recursion (Files.walk), and
+   * the /directories endpoint is gone.
+   *
+   * <p>Wire format rule: '/' is the separator on the wire. relativize() on Windows produces '\', so
+   * normalize before sending; the client's Path.resolve() accepts '/' on both platforms, so no
+   * reverse step is needed.
+   */
+  private void attachGetFilesEndpoint() {
     httpServer.createContext(
-        "/" + pathName,
+        "/files",
         exchange -> {
-          Path outDir =
-              Paths.get(
-                  runtimeContext.platformState().homeDir(),
-                  runtimeContext.basedir(),
-                  runtimeContext.outgoing());
-          log.info(
-              "received get-{} request. Reading files from {}", pathName, outDir.toAbsolutePath());
-          try {
-            List<String> filenames;
-
-            try (var files = Files.list(outDir)) {
-              filenames =
-                  files.filter(fileType).map(path -> path.getFileName().toString()).toList();
-            }
-
-            byte[] responseBytes;
-
-            if (filenames.isEmpty()) {
-              String payload = String.format("No %s available for download", pathName);
-              responseBytes = payload.getBytes(StandardCharsets.UTF_8);
-
-              exchange.sendResponseHeaders(404, responseBytes.length);
-              log.info(payload);
-            } else {
-              String payload = String.join("\n", filenames);
-              responseBytes = payload.getBytes(StandardCharsets.UTF_8);
-
-              exchange.sendResponseHeaders(200, responseBytes.length);
-            }
-            log.info("Listing {}", pathType);
-            try (var out = exchange.getResponseBody()) {
-              out.write(responseBytes);
-            }
-
+          Path outDir = outDir();
+          log.debug("get-files: walking {}", outDir);
+          try (var walk = Files.walk(outDir)) {
+            String payload =
+                walk.filter(Files::isRegularFile)
+                    .map(outDir::relativize)
+                    // no path segment may be a dotfile: skips .DS_Store and
+                    // anything inside a hidden directory (a Path iterates its segments)
+                    .filter(
+                        rel -> {
+                          for (Path segment : rel) {
+                            if (segment.toString().startsWith(".")) {
+                              return false;
+                            }
+                          }
+                          return true;
+                        })
+                    .map(rel -> rel.toString().replace('\\', '/'))
+                    .collect(Collectors.joining("\n"));
+            // an empty out/ is a normal answer, not an error: 200 with an empty body.
+            // (The old 404-with-prose-body made the client parse the error text as filenames.)
+            respond(exchange, 200, payload);
           } catch (Exception e) {
-            log.error("Failed to list {} in {}", pathName, outDir.toAbsolutePath(), e);
-
-            String payload = "Internal server error";
-            byte[] responseBytes = payload.getBytes(StandardCharsets.UTF_8);
-
-            exchange.sendResponseHeaders(500, responseBytes.length);
-
-            try (var out = exchange.getResponseBody()) {
-              out.write(responseBytes);
-            }
+            log.error("Failed to walk {}", outDir, e);
+            respond(exchange, 500, "Internal server error");
           }
         });
   }
@@ -305,15 +302,12 @@ public class HttpServerWrapper implements Server, LifeCycle {
     return m;
   }
 
-  @Override
-  public void start() {
-    httpServer.start();
-  }
-
-  @Override
-  public void stop() throws InterruptedException {
-    httpServer.stop(10);
-    log.info("Server shutdown");
+  private Path outDir() {
+    return Paths.get(
+            runtimeContext.platformState().homeDir(),
+            runtimeContext.basedir(),
+            runtimeContext.outgoing())
+        .normalize();
   }
 
   private record Response(int code, byte[] responseBytes) {}

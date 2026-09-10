@@ -1,7 +1,11 @@
 package com.ntros.workers;
 
+import static com.ntros.data.PathType.DIRECTORIES;
+import static com.ntros.data.PathType.FILES;
+
 import com.ntros.data.CancellationToken;
 import com.ntros.data.DeviceAddress;
+import com.ntros.data.PathType;
 import com.ntros.data.RuntimeContext;
 import com.ntros.data.platform.PlatformState;
 import java.io.IOException;
@@ -85,48 +89,52 @@ public class Downloader implements Runnable {
         continue;
       }
 
-      // Source Machine flow(MAC/PC)
-      // 1. connect to source machine
-      if (!checkLiveSourceMachine()) {
-        continue;
-      }
+      download(downloadDirectory);
+    }
+  }
 
-      // TODO: add retry + backoff on list and remove healthcheck since list does the same thing
-      // 2. Read undelivered files. Can contain inFlight files too, until they are acked.
-      var filenames = getFiles();
-      if (filenames.isEmpty()) {
-        log.info("No files found");
+  // recursive download of whole directory structure
+  private void download(Path downloadDirectory) {
+    // TODO: add retry + backoff on list and remove healthcheck since list does the same thing
+    // 2. Read undelivered files. Can contain inFlight files too, until they are acked.
+    // reads files at top
+    submitFiles(getPaths(FILES), downloadDirectory);
+    var dirNames = getPaths(DIRECTORIES);
+    for (var d : dirNames) {
+      Path current = downloadDirectory.resolve(d);
+      download(current);
+    }
+  }
+
+  private void submitFiles(Set<String> filenames, Path downloadDirectory) {
+    log.info("Read {}", filenames);
+    // 3. delegate download + write to VTs
+    for (var f : filenames) {
+      // if a listed file is in the set, skip it since its already being processed
+      if (!inFlight.add(f)) {
         continue;
       }
-      log.info("Read {}", filenames);
-      // 3. delegate download + write to VTs
-      for (var f : filenames) {
-        // if a listed file is in the set, skip it since its already being processed
-        if (!inFlight.add(f)) {
-          continue;
-        }
-        // acquire inside VT so the downloader is not blocked.
-        // on large number of files to download(n = 1000), 1K VTs will be
-        // created, only 5 of them allowed to download.
-        // The rest wait.
-        // VTs waiting is nearly free because they dont pin OS threads.
-        Thread.ofVirtual()
-            .start(
-                () -> {
+      // acquire inside VT so the downloader is not blocked.
+      // on large number of files to download(n = 1000), 1K VTs will be
+      // created, only 5 of them allowed to download.
+      // The rest wait.
+      // VTs waiting is nearly free because they dont pin OS threads.
+      Thread.ofVirtual()
+          .start(
+              () -> {
+                try {
+                  semaphore.acquire();
                   try {
-                    semaphore.acquire();
-                    try {
-                      download(f, downloadDirectory).ifPresent(this::ack);
-                    } finally {
-                      semaphore.release(); // can only run if the acquire above returned
-                    }
-                  } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
+                    download(f, downloadDirectory).ifPresent(this::ack);
                   } finally {
-                    inFlight.remove(f); // pairs with the add() in the loop, runs no matter what
+                    semaphore.release(); // can only run if the acquire above returned
                   }
-                });
-      }
+                } catch (InterruptedException e) {
+                  Thread.currentThread().interrupt();
+                } finally {
+                  inFlight.remove(f); // pairs with the add() in the loop, runs no matter what
+                }
+              });
     }
   }
 
@@ -171,10 +179,11 @@ public class Downloader implements Runnable {
     }
   }
 
-  private Set<String> getFiles() {
+  private Set<String> getPaths(PathType pathType) {
+    String pathName = pathType.name().toLowerCase();
     var req =
         HttpRequest.newBuilder()
-            .uri(URI.create(String.format("%s/files", baseUri)))
+            .uri(URI.create(String.format("%s/%s", baseUri, pathName)))
             .timeout(Duration.ofSeconds(10))
             .GET()
             .build();
@@ -182,15 +191,36 @@ public class Downloader implements Runnable {
     try {
       var res = client.send(req, HttpResponse.BodyHandlers.ofLines());
       if (res.statusCode() == 204) {
-        log.info("No files for transfer at source");
+        log.info("No {}s for transfer at source", pathName);
         return Set.of();
       }
       return res.body().collect(Collectors.toSet());
     } catch (IOException | InterruptedException e) {
-      log.error("failed during get-files request", e);
+      log.error("failed during get-{}s request", pathName, e);
     }
     return Set.of();
   }
+
+  //  private Set<String> getFiles() {
+  //    var req =
+  //        HttpRequest.newBuilder()
+  //            .uri(URI.create(String.format("%s/files", baseUri)))
+  //            .timeout(Duration.ofSeconds(10))
+  //            .GET()
+  //            .build();
+  //
+  //    try {
+  //      var res = client.send(req, HttpResponse.BodyHandlers.ofLines());
+  //      if (res.statusCode() == 204) {
+  //        log.info("No files for transfer at source");
+  //        return Set.of();
+  //      }
+  //      return res.body().collect(Collectors.toSet());
+  //    } catch (IOException | InterruptedException e) {
+  //      log.error("failed during get-files request", e);
+  //    }
+  //    return Set.of();
+  //  }
 
   /**
    * Downloads file to a tmp dir first, then moves to destination. Overwrites existing with

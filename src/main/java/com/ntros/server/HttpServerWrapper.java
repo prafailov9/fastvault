@@ -1,6 +1,7 @@
 package com.ntros.server;
 
 import com.ntros.LifeCycle;
+import com.ntros.data.PathType;
 import com.ntros.data.RuntimeContext;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
@@ -16,6 +17,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Executors;
+import java.util.function.Predicate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -32,7 +34,8 @@ public class HttpServerWrapper implements Server, LifeCycle {
     httpServer.setExecutor(Executors.newFixedThreadPool(runtimeContext.serverWorkers()));
     attachHealthEndpoint();
     attachLeadershipEndpoint();
-    attachGetFilesEndpoint();
+    attachGetPathsEndpoint(PathType.FILES, Files::isRegularFile);
+    attachGetPathsEndpoint(PathType.DIRECTORIES, Files::isDirectory);
     attachDownloadEndpoint();
     attachCleanupEndpoint();
     attachElectEndpoint();
@@ -82,31 +85,30 @@ public class HttpServerWrapper implements Server, LifeCycle {
         });
   }
 
-  private void attachGetFilesEndpoint() {
+  private void attachGetPathsEndpoint(PathType pathType, Predicate<Path> fileType) {
+    String pathName = pathType.name().toLowerCase();
     httpServer.createContext(
-        "/files",
+        "/" + pathName,
         exchange -> {
           Path outDir =
               Paths.get(
                   runtimeContext.platformState().homeDir(),
                   runtimeContext.basedir(),
                   runtimeContext.outgoing());
-          log.info("received get-files request. Reading files from {}", outDir.toAbsolutePath());
+          log.info(
+              "received get-{} request. Reading files from {}", pathName, outDir.toAbsolutePath());
           try {
             List<String> filenames;
 
             try (var files = Files.list(outDir)) {
               filenames =
-                  files
-//                      .filter(Files::isRegularFile)
-                      .map(path -> path.getFileName().toString())
-                      .toList();
+                  files.filter(fileType).map(path -> path.getFileName().toString()).toList();
             }
 
             byte[] responseBytes;
 
             if (filenames.isEmpty()) {
-              String payload = "No files available for download";
+              String payload = String.format("No %s available for download", pathName);
               responseBytes = payload.getBytes(StandardCharsets.UTF_8);
 
               exchange.sendResponseHeaders(404, responseBytes.length);
@@ -117,13 +119,13 @@ public class HttpServerWrapper implements Server, LifeCycle {
 
               exchange.sendResponseHeaders(200, responseBytes.length);
             }
-            log.info("Listing files");
+            log.info("Listing {}", pathType);
             try (var out = exchange.getResponseBody()) {
               out.write(responseBytes);
             }
 
           } catch (Exception e) {
-            log.error("Failed to list files in {}", outDir.toAbsolutePath(), e);
+            log.error("Failed to list {} in {}", pathName, outDir.toAbsolutePath(), e);
 
             String payload = "Internal server error";
             byte[] responseBytes = payload.getBytes(StandardCharsets.UTF_8);
